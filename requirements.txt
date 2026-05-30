@@ -4,7 +4,7 @@ supabase==2.9.1
 anthropic==0.40.0
 jinja2==3.1.4
 weasyprint==63.0
-resend==2.5.0
+resend==2.5.1
 python-dateutil==2.9.0
 python-dotenv==1.0.1
 streamlit==1.40.0
