@@ -1,0 +1,57 @@
+name: Monthly Owner Report
+
+on:
+  schedule:
+    - cron: '0 6 1 * *'
+  workflow_dispatch:
+    inputs:
+      report_month:
+        description: 'Override month (YYYY-MM). Defaults to last completed month.'
+        required: false
+        type: string
+      test_mode:
+        description: 'Send all PDFs to TEST_RECIPIENT instead of owners'
+        required: false
+        default: 'false'
+        type: choice
+        options: ['true', 'false']
+
+jobs:
+  report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      CLOUDBEDS_API_KEY: ${{ secrets.CLOUDBEDS_API_KEY }}
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_KEY: ${{ secrets.SUPABASE_SERVICE_KEY }}
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      RESEND_API_KEY: ${{ secrets.RESEND_API_KEY }}
+      REPORTS_FROM_EMAIL: ${{ secrets.REPORTS_FROM_EMAIL }}
+      DASHBOARD_URL: ${{ secrets.DASHBOARD_URL }}
+      TEST_MODE: ${{ github.event.inputs.test_mode || 'false' }}
+      TEST_RECIPIENT: ${{ secrets.TEST_RECIPIENT }}
+      REPORT_MONTH: ${{ github.event.inputs.report_month }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: 'pip'
+
+      - name: Install system deps for WeasyPrint
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y libpango-1.0-0 libpangoft2-1.0-0 libcairo2 libgdk-pixbuf-2.0-0 fonts-dejavu
+
+      - name: Install Python deps
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Generate and send reports
+        working-directory: src
+        run: python generate_reports.py
