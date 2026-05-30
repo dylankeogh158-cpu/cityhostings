@@ -1,0 +1,131 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="UTF-8">
+<title>{{ property.name }} — {{ month_label }}</title>
+<style>
+  @page { size: A4; margin: 18mm 15mm; @bottom-center { content: counter(page) " / " counter(pages); font-size: 9pt; color: #888; } }
+  body { font-family: 'Helvetica', 'Arial', sans-serif; color: #1a1a1a; font-size: 10.5pt; line-height: 1.5; }
+  .header { border-bottom: 2px solid #1F3A5F; padding-bottom: 12px; margin-bottom: 18px; }
+  .brand { font-size: 11pt; color: #1F3A5F; font-weight: 700; letter-spacing: 1px; }
+  .title { font-size: 22pt; color: #1F3A5F; margin: 6px 0 0 0; font-weight: 700; }
+  .subtitle { font-size: 12pt; color: #666; margin: 4px 0 0 0; }
+  .section-title { font-size: 13pt; color: #1F3A5F; font-weight: 700; margin: 22px 0 10px 0; border-bottom: 1px solid #ddd; padding-bottom: 4px; }
+  .kpi-row { display: flex; gap: 12px; margin-bottom: 8px; }
+  .kpi-card { flex: 1; background: #F2F4F7; border-left: 3px solid #1F3A5F; padding: 12px 14px; }
+  .kpi-card .label { font-size: 9pt; color: #666; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-card .value { font-size: 18pt; font-weight: 700; color: #1F3A5F; margin: 4px 0 2px 0; }
+  .kpi-card .delta { font-size: 9pt; color: #555; }
+  .pos { color: #2E8B57; }
+  .neg { color: #C0392B; }
+  table { width: 100%; border-collapse: collapse; margin: 8px 0 16px 0; font-size: 10pt; }
+  th { background: #1F3A5F; color: white; text-align: left; padding: 7px 9px; font-weight: 600; }
+  td { border-bottom: 1px solid #E5E7EB; padding: 7px 9px; }
+  tr:nth-child(even) td { background: #FAFBFC; }
+  .total-row td { font-weight: 700; border-top: 2px solid #1F3A5F; background: #F2F4F7; }
+  .commentary { background: #FAFBFC; border-left: 3px solid #1F3A5F; padding: 14px 18px; margin: 12px 0; font-size: 10.5pt; line-height: 1.6; }
+  .commentary p { margin: 0 0 0.8em 0; }
+  .chart { margin: 8px 0 18px 0; }
+  .footer { margin-top: 28px; padding-top: 10px; border-top: 1px solid #ddd; color: #888; font-size: 8.5pt; }
+</style>
+</head>
+<body>
+
+<div class="header">
+  <div class="brand">CITYHOSTINGS · OWNER REPORT</div>
+  <div class="title">{{ property.name }}</div>
+  <div class="subtitle">{{ property.location or '' }} · {{ month_label }}</div>
+</div>
+
+<div class="section-title">Headline KPIs</div>
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="label">Revenue</div>
+    <div class="value">{{ pack.this.kpis.room_revenue | currency(property.currency) }}</div>
+    <div class="delta">
+      MoM <span class="{% if pack.this.kpis.room_revenue and pack.prev.kpis.room_revenue and pack.this.kpis.room_revenue >= pack.prev.kpis.room_revenue %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.room_revenue | delta(pack.prev.kpis.room_revenue) }}</span>
+      &nbsp;·&nbsp; YoY <span class="{% if pack.this.kpis.room_revenue and pack.yoy.kpis.room_revenue and pack.this.kpis.room_revenue >= pack.yoy.kpis.room_revenue %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.room_revenue | delta(pack.yoy.kpis.room_revenue) }}</span>
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Occupancy</div>
+    <div class="value">{{ pack.this.kpis.occupancy_rate | pct }}</div>
+    <div class="delta">
+      MoM <span class="{% if pack.this.kpis.occupancy_rate and pack.prev.kpis.occupancy_rate and pack.this.kpis.occupancy_rate >= pack.prev.kpis.occupancy_rate %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.occupancy_rate | delta(pack.prev.kpis.occupancy_rate) }}</span>
+      &nbsp;·&nbsp; YoY <span class="{% if pack.this.kpis.occupancy_rate and pack.yoy.kpis.occupancy_rate and pack.this.kpis.occupancy_rate >= pack.yoy.kpis.occupancy_rate %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.occupancy_rate | delta(pack.yoy.kpis.occupancy_rate) }}</span>
+    </div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">ADR</div>
+    <div class="value">{{ pack.this.kpis.adr | currency(property.currency) }}</div>
+    <div class="delta">
+      MoM <span class="{% if pack.this.kpis.adr and pack.prev.kpis.adr and pack.this.kpis.adr >= pack.prev.kpis.adr %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.adr | delta(pack.prev.kpis.adr) }}</span>
+      &nbsp;·&nbsp; YoY <span class="{% if pack.this.kpis.adr and pack.yoy.kpis.adr and pack.this.kpis.adr >= pack.yoy.kpis.adr %}pos{% else %}neg{% endif %}">{{ pack.this.kpis.adr | delta(pack.yoy.kpis.adr) }}</span>
+    </div>
+  </div>
+</div>
+<div class="kpi-row">
+  <div class="kpi-card">
+    <div class="label">RevPAR</div>
+    <div class="value">{{ pack.this.kpis.revpar | currency(property.currency) }}</div>
+    <div class="delta">MoM {{ pack.this.kpis.revpar | delta(pack.prev.kpis.revpar) }} · YoY {{ pack.this.kpis.revpar | delta(pack.yoy.kpis.revpar) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Bookings</div>
+    <div class="value">{{ pack.this.kpis.bookings }}</div>
+    <div class="delta">MoM {{ pack.this.kpis.bookings | delta(pack.prev.kpis.bookings) }} · YoY {{ pack.this.kpis.bookings | delta(pack.yoy.kpis.bookings) }}</div>
+  </div>
+  <div class="kpi-card">
+    <div class="label">Avg Length of Stay</div>
+    <div class="value">{{ pack.this.alos or '—' }}</div>
+    <div class="delta">nights · prev {{ pack.prev.alos or '—' }} · last yr {{ pack.yoy.alos or '—' }}</div>
+  </div>
+</div>
+
+<div class="section-title">Profit &amp; Loss</div>
+<table>
+  <tr><th>Line item</th><th style="text-align:right">Amount</th></tr>
+  <tr><td>Gross Revenue</td><td style="text-align:right">{{ pack.this.pnl.gross_revenue | currency(property.currency) }}</td></tr>
+  <tr><td>OTA Fees</td><td style="text-align:right">−{{ pack.this.pnl.ota_fees | currency(property.currency) }}</td></tr>
+  <tr><td>Cleaning</td><td style="text-align:right">−{{ pack.this.pnl.cleaning | currency(property.currency) }}</td></tr>
+  <tr><td>Linen</td><td style="text-align:right">−{{ pack.this.pnl.linen | currency(property.currency) }}</td></tr>
+  <tr><td>Maintenance</td><td style="text-align:right">−{{ pack.this.pnl.maintenance | currency(property.currency) }}</td></tr>
+  {% if pack.this.pnl.other_expenses %}
+  <tr><td>Other</td><td style="text-align:right">−{{ pack.this.pnl.other_expenses | currency(property.currency) }}</td></tr>
+  {% endif %}
+  <tr><td>Management Fee ({{ pack.this.pnl.mgmt_fee_pct }}%)</td><td style="text-align:right">−{{ pack.this.pnl.mgmt_fee | currency(property.currency) }}</td></tr>
+  <tr class="total-row"><td>Net Profit for Owner</td><td style="text-align:right">{{ pack.this.pnl.net_profit_owner | currency(property.currency) }}</td></tr>
+</table>
+
+<div style="page-break-before: always;"></div>
+
+<div class="section-title">13-Month Revenue Trend</div>
+<div class="chart">{{ revenue_chart | safe }}</div>
+
+<div class="section-title">13-Month Occupancy Trend</div>
+<div class="chart">{{ occupancy_chart | safe }}</div>
+
+<div class="section-title">Booking Sources</div>
+<table>
+  <tr><th>Source</th><th style="text-align:right">Revenue</th><th style="text-align:right">Nights</th></tr>
+  {% for s in pack.source_mix %}
+  <tr><td>{{ s.source }}</td><td style="text-align:right">{{ s.revenue | currency(property.currency) }}</td><td style="text-align:right">{{ s.nights }}</td></tr>
+  {% endfor %}
+</table>
+
+<div style="page-break-before: always;"></div>
+
+<div class="section-title">Performance Commentary</div>
+<div class="commentary">
+{% for para in commentary.split('\n\n') %}
+  <p>{{ para }}</p>
+{% endfor %}
+</div>
+
+<div class="footer">
+  Generated automatically by CityHostings.<br>
+  Questions? Reply to this email or visit <a href="{{ dashboard_url }}">{{ dashboard_url }}</a>
+</div>
+
+</body>
+</html>
