@@ -138,7 +138,7 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
                         r.get("endDate") or r.get("checkOut"),
                         r.get("guestName") or r.get("firstName", "") + " " + r.get("lastName", ""),
                         r.get("grandTotal") or r.get("total"),
-                        r.get("balance") or r.get("netTotal") or r.get("grandTotal"),
+                        r.get("grandTotal") or r.get("total") or 0,
                         r.get("commissions", {}).get("total", 0) if isinstance(r.get("commissions"), dict) else 0,
                         r.get("cleaningFee", 0),
                         r.get("currency"),
