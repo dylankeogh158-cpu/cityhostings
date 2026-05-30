@@ -42,9 +42,9 @@ def main() -> int:
         # Delta window: from last successful sync minus 1 hour, or 7 days back on first run
         since = last_successful_sync()
         if since:
-            modified_from = (datetime.fromisoformat(since) - timedelta(hours=1)).isoformat()
+            modified_from = (datetime.fromisoformat(since) - timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
         else:
-            modified_from = (datetime.now(timezone.utc) - timedelta(days=7)).isoformat()
+            modified_from = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
         log.info("Pulling reservations modified since %s", modified_from)
 
         for p in properties:
