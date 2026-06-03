@@ -86,11 +86,35 @@ def revenue_trend(property_id: str, end_month: date, months_back: int = 13) -> l
 
 
 def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
-    """Full P&L for a property for a given month."""
+    """Full P&L for a property for a given month.
+
+    Auto-calculates cleaning + linen from bookings × per-turnover rates
+    stored on the property. Manual expense entries are added ON TOP for
+    one-off costs (e.g. a deep clean).
+    """
     kpis = month_kpis(property_id, month)
     gross = float(kpis["room_revenue"] or 0)
     ota = float(kpis["ota_fees"] or 0)
+    bookings = int(kpis["bookings"] or 0)
 
+    # Fetch the property's per-turnover rates
+    with conn() as c:
+        rate_row = c.execute(
+            """
+            select coalesce(cleaning_fee_per_turnover, 0) as cf,
+                   coalesce(linen_fee_per_turnover, 0) as lf
+              from properties where id = %s
+            """,
+            (property_id,),
+        ).fetchone()
+
+    cf_rate = float(rate_row["cf"]) if rate_row else 0
+    lf_rate = float(rate_row["lf"]) if rate_row else 0
+
+    cleaning_auto = round(bookings * cf_rate, 2)
+    linen_auto = round(bookings * lf_rate, 2)
+
+    # Manual expense overrides (added ON TOP of auto-calc)
     with conn() as c:
         rows = c.execute(
             """
@@ -103,8 +127,8 @@ def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
         ).fetchall()
 
     expense_map = {r["category"]: float(r["amount"]) for r in rows}
-    cleaning = expense_map.get("cleaning", 0)
-    linen = expense_map.get("linen", 0)
+    cleaning = round(cleaning_auto + expense_map.get("cleaning", 0), 2)
+    linen = round(linen_auto + expense_map.get("linen", 0), 2)
     maintenance = expense_map.get("maintenance", 0)
     other = sum(v for k, v in expense_map.items() if k not in ("cleaning", "linen", "maintenance"))
 
