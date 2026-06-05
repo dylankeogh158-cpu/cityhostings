@@ -87,8 +87,8 @@
   <tr><th>Line item</th><th style="text-align:right">Amount</th></tr>
   <tr><td>Gross Revenue</td><td style="text-align:right">{{ pack.this.pnl.gross_revenue | currency(property.currency) }}</td></tr>
   <tr><td>OTA Fees</td><td style="text-align:right">−{{ pack.this.pnl.ota_fees | currency(property.currency) }}</td></tr>
-  <tr><td>Cleaning</td><td style="text-align:right">−{{ pack.this.pnl.cleaning | currency(property.currency) }}</td></tr>
-  <tr><td>Linen</td><td style="text-align:right">−{{ pack.this.pnl.linen | currency(property.currency) }}</td></tr>
+  <tr><td>Cleaning Wages</td><td style="text-align:right">−{{ pack.this.pnl.cleaning | currency(property.currency) }}</td></tr>
+  <tr><td>Linen (weighted avg)</td><td style="text-align:right">−{{ pack.this.pnl.linen | currency(property.currency) }}</td></tr>
   <tr><td>Maintenance</td><td style="text-align:right">−{{ pack.this.pnl.maintenance | currency(property.currency) }}</td></tr>
   {% if pack.this.pnl.other_expenses %}
   <tr><td>Other</td><td style="text-align:right">−{{ pack.this.pnl.other_expenses | currency(property.currency) }}</td></tr>
