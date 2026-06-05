@@ -91,7 +91,9 @@ DEFAULT_OTA_RATES = {
     'airbnb (api)': 0.15,
     'vrbo': 0.08,
     'agoda': 0.15,
-}def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
+}
+
+def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
     """Full P&L for a property for a given month.
 
     - OTA fees auto-calculated from source mix × industry-standard rates
