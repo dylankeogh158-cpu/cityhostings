@@ -84,20 +84,35 @@ def revenue_trend(property_id: str, end_month: date, months_back: int = 13) -> l
         ).fetchall()
     return [dict(r) for r in rows]
 
-
-def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
+DEFAULT_OTA_RATES = {
+    'booking.com': 0.15,
+    'expedia': 0.15,
+    'airbnb': 0.15,
+    'airbnb (api)': 0.15,
+    'vrbo': 0.08,
+    'agoda': 0.15,
+}def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
     """Full P&L for a property for a given month.
 
-    Auto-calculates cleaning + linen from bookings × per-turnover rates
-    stored on the property. Manual expense entries are added ON TOP for
-    one-off costs (e.g. a deep clean).
+    - OTA fees auto-calculated from source mix × industry-standard rates
+      (Cloudbeds doesn't pass commission data)
+    - Cleaning + linen auto-calculated from bookings × per-turnover rates
+      stored on the property
+    - Manual expense entries added ON TOP for one-off costs.
     """
     kpis = month_kpis(property_id, month)
     gross = float(kpis["room_revenue"] or 0)
-    ota = float(kpis["ota_fees"] or 0)
     bookings = int(kpis["bookings"] or 0)
 
-    # Fetch the property's per-turnover rates
+    # OTA fees = source revenue × default commission rate per source
+    sources = source_mix(property_id, month)
+    ota = sum(
+        float(s["revenue"] or 0) * DEFAULT_OTA_RATES.get((s["source"] or "").strip().lower(), 0)
+        for s in sources
+    )
+    ota = round(ota, 2)
+
+    # Property's per-turnover rates
     with conn() as c:
         rate_row = c.execute(
             """
@@ -114,7 +129,7 @@ def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
     cleaning_auto = round(bookings * cf_rate, 2)
     linen_auto = round(bookings * lf_rate, 2)
 
-    # Manual expense overrides (added ON TOP of auto-calc)
+    # Manual expense additions (added ON TOP of auto-calc)
     with conn() as c:
         rows = c.execute(
             """
@@ -137,7 +152,7 @@ def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
 
     return dict(
         gross_revenue=round(gross, 2),
-        ota_fees=round(ota, 2),
+        ota_fees=ota,
         cleaning=cleaning,
         linen=linen,
         maintenance=maintenance,
@@ -146,6 +161,7 @@ def pnl(property_id: str, month: date, mgmt_fee_pct: float) -> dict:
         mgmt_fee_pct=mgmt_fee_pct,
         net_profit_owner=net_profit,
     )
+
 
 
 def comparison_pack(property_id: str, current: date, mgmt_fee_pct: float) -> dict:
