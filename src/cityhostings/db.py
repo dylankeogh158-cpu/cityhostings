@@ -49,7 +49,7 @@ def _connection_string() -> str:
 @contextmanager
 def conn():
     """Yield a psycopg connection."""
-    with psycopg.connect(_connection_string(), row_factory=dict_row) as c:
+    with psycopg.connect(_connection_string(), row_factory=dict_row, prepare_threshold=None) as c:
         yield c
 
 
