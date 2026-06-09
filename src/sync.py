@@ -40,12 +40,11 @@ def main() -> int:
         log.info("Syncing %d active properties", len(properties))
 
         # Delta window: from last successful sync minus 1 hour, or 7 days back on first run
-        since = last_successful_sync()
-        if since:
-            modified_from = (datetime.fromisoformat(since) - timedelta(hours=1)).strftime('%Y-%m-%d %H:%M:%S')
-        else:
-            modified_from = (datetime.now(timezone.utc) - timedelta(days=7)).strftime('%Y-%m-%d %H:%M:%S')
-        log.info("Pulling reservations modified since %s", modified_from)
+        # Pull all bookings checking in within a 2-year window.
+        # Simpler than delta-syncing and handles new properties correctly.
+        check_in_from = (datetime.now(timezone.utc) - timedelta(days=365)).strftime('%Y-%m-%d')
+        check_in_to = (datetime.now(timezone.utc) + timedelta(days=365)).strftime('%Y-%m-%d')
+        log.info("Pulling reservations with check_in from %s to %s", check_in_from, check_in_to)
 
         for p in properties:
             cb_id = p["cloudbeds_id"]
@@ -57,7 +56,9 @@ def main() -> int:
             log.info("  units: %d", len(rooms))
 
             # Reservations
-            n = upsert_reservations(p["id"], client.get_reservations(cb_id, modified_from=modified_from))
+            n = upsert_reservations(p["id"], client.get_reservations(
+                cb_id, check_in_from=check_in_from, check_in_to=check_in_to
+            ))
             total_upserts += n
             log.info("  reservations upserted: %d", n)
 
