@@ -99,8 +99,7 @@ if not auth_gate():
 
 @st.cache_resource
 def get_db():
-    return psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None)
-
+   return psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None, autocommit=True)
 
 def q(sql: str, params: tuple = ()) -> list[dict]:
     with get_db().cursor() as cur:
