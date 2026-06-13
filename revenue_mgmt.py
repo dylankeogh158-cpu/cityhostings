@@ -535,6 +535,31 @@ def page_pricing():
     rows = []
     for prop in properties:
         units = prop['total_units'] or 1
+
+        # Baseline rate per day-of-week for this property (last 90 days)
+        rates_by_dow = q("""
+            select extract(dow from check_in) as dow,
+                   avg(net_amount / nullif(nights, 0))::numeric as avg_rate
+            from reservations
+            where property_id = %s
+              and status in ('confirmed', 'checked_out')
+              and check_in >= current_date - interval '90 days'
+              and net_amount > 0 and nights > 0
+            group by extract(dow from check_in)
+        """, (prop['id'],))
+        rate_by_dow = {int(r['dow']): float(r['avg_rate'] or 0) for r in rates_by_dow}
+
+        # Fallback overall avg
+        overall = q("""
+            select avg(net_amount / nullif(nights, 0))::numeric as avg_rate
+            from reservations
+            where property_id = %s
+              and status in ('confirmed', 'checked_out')
+              and check_in >= current_date - interval '90 days'
+              and net_amount > 0 and nights > 0
+        """, (prop['id'],))
+        overall_rate = float(overall[0]['avg_rate'] or 0) if overall else 0
+
         daily = q("""
             select gs::date as night,
                    count(*) as room_nights
@@ -554,19 +579,31 @@ def page_pricing():
             booked = d['room_nights'] or 0
             occ = (booked / units * 100) if units else 0
 
+            # Python weekday: Mon=0..Sun=6 → Postgres dow: Sun=0..Sat=6
+            pg_dow = (night.weekday() + 1) % 7
+            baseline = rate_by_dow.get(pg_dow) or overall_rate
+
             if occ >= 70:
                 bucket = "raise"
-                if occ >= 95: sug = "↑ +15–25% (very full)"
-                elif occ >= 85: sug = "↑ +10–15% (filling fast)"
-                else: sug = "↑ +5–10%"
+                if occ >= 95: pct, sug = 0.20, "↑ +15–25% (very full)"
+                elif occ >= 85: pct, sug = 0.12, "↑ +10–15% (filling fast)"
+                else: pct, sug = 0.07, "↑ +5–10%"
             elif days_out <= 14 and occ <= 30:
                 bucket = "drop"
-                if occ == 0 and days_out <= 7: sug = "↓ −15–20% (empty close-in)"
-                elif occ <= 15: sug = "↓ −10–15%"
-                else: sug = "↓ −5–10%"
+                if occ == 0 and days_out <= 7: pct, sug = -0.17, "↓ −15–20% (empty close-in)"
+                elif occ <= 15: pct, sug = -0.12, "↓ −10–15%"
+                else: pct, sug = -0.07, "↓ −5–10%"
             else:
                 bucket = "steady"
-                sug = "Hold"
+                pct, sug = 0, "Hold"
+
+            if baseline > 0 and pct != 0:
+                target = baseline * (1 + pct)
+                rate_text = f"€{baseline:.0f} → €{target:.0f}"
+            elif baseline > 0:
+                rate_text = f"€{baseline:.0f}"
+            else:
+                rate_text = "—"
 
             rows.append({
                 "Date": night,
@@ -575,6 +612,7 @@ def page_pricing():
                 "Booked": f"{booked}/{units}",
                 "Occ %": f"{occ:.0f}%",
                 "Days out": days_out,
+                "Current → Target": rate_text,
                 "Suggestion": sug,
                 "_bucket": bucket,
             })
@@ -588,7 +626,7 @@ def page_pricing():
     raise_df = df_all[df_all["_bucket"] == "raise"].drop(columns=["_bucket"])
     if not raise_df.empty:
         st.dataframe(raise_df.sort_values("Date"), use_container_width=True, hide_index=True)
-        st.caption(f"💡 {len(raise_df)} dates with ≥70% occupancy. Capturing higher ADR here protects margin.")
+        st.caption(f"💡 {len(raise_df)} dates with ≥70% occupancy. Baseline rate = avg paid for that day-of-week over last 90 days.")
     else:
         st.success("✅ No 'raise' opportunities — nothing above 70% booked in this window.")
 
@@ -608,7 +646,7 @@ def page_pricing():
     st.subheader(f"✅ STEADY — {steady_count} dates trending normally")
     with st.expander("Show steady dates"):
         steady_df = df_all[df_all["_bucket"] == "steady"].drop(columns=["_bucket"])
-        st.dataframe(steady_df.sort_values("Date"), use_container_width=True, hide_index=True)# ============================================================================
+        st.dataframe(steady_df.sort_values("Date"), use_container_width=True, hide_index=True)
 # Page: Settings
 # ============================================================================
 
