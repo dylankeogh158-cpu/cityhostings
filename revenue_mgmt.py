@@ -124,6 +124,7 @@ with st.sidebar:
     page = st.radio(
         "Navigate",
         ["📊 Portfolio Command Centre",
+         "🎯 Pricing Opportunities",
          "📈 Direct vs OTA",
          "📉 Performance Analytics",
          "⚙️ Settings"],
@@ -521,7 +522,93 @@ def page_performance():
         )
 
 
-# ============================================================================
+def page_pricing():
+    st.title("🎯 Pricing Opportunities")
+    st.caption("Forward-looking dates needing rate adjustments — based on booking pace")
+
+    today = date.today()
+    horizon_days = st.slider("Look ahead (days)", 14, 90, 60)
+    horizon = today + timedelta(days=horizon_days)
+
+    properties = q("select id, name, total_units from properties where active = true order by name")
+
+    rows = []
+    for prop in properties:
+        units = prop['total_units'] or 1
+        daily = q("""
+            select gs::date as night,
+                   count(*) as room_nights
+            from generate_series(%s::date, %s::date, '1 day') gs
+            left join reservations r
+              on r.property_id = %s
+              and r.status in ('confirmed', 'checked_out')
+              and r.check_in <= gs::date
+              and r.check_out > gs::date
+            group by gs::date
+            order by gs::date
+        """, (today, horizon, prop['id']))
+
+        for d in daily:
+            night = d['night']
+            days_out = (night - today).days
+            booked = d['room_nights'] or 0
+            occ = (booked / units * 100) if units else 0
+
+            if occ >= 70:
+                bucket = "raise"
+                if occ >= 95: sug = "↑ +15–25% (very full)"
+                elif occ >= 85: sug = "↑ +10–15% (filling fast)"
+                else: sug = "↑ +5–10%"
+            elif days_out <= 14 and occ <= 30:
+                bucket = "drop"
+                if occ == 0 and days_out <= 7: sug = "↓ −15–20% (empty close-in)"
+                elif occ <= 15: sug = "↓ −10–15%"
+                else: sug = "↓ −5–10%"
+            else:
+                bucket = "steady"
+                sug = "Hold"
+
+            rows.append({
+                "Date": night,
+                "Day": night.strftime("%a"),
+                "Property": prop['name'],
+                "Booked": f"{booked}/{units}",
+                "Occ %": f"{occ:.0f}%",
+                "Days out": days_out,
+                "Suggestion": sug,
+                "_bucket": bucket,
+            })
+
+    df_all = pd.DataFrame(rows)
+    if df_all.empty:
+        st.info("No data available.")
+        return
+
+    st.subheader("🔥 RAISE RATES — high demand")
+    raise_df = df_all[df_all["_bucket"] == "raise"].drop(columns=["_bucket"])
+    if not raise_df.empty:
+        st.dataframe(raise_df.sort_values("Date"), use_container_width=True, hide_index=True)
+        st.caption(f"💡 {len(raise_df)} dates with ≥70% occupancy. Capturing higher ADR here protects margin.")
+    else:
+        st.success("✅ No 'raise' opportunities — nothing above 70% booked in this window.")
+
+    st.markdown("---")
+
+    st.subheader("⚠️ DROP RATES — close-in soft demand")
+    drop_df = df_all[df_all["_bucket"] == "drop"].drop(columns=["_bucket"])
+    if not drop_df.empty:
+        st.dataframe(drop_df.sort_values("Date"), use_container_width=True, hide_index=True)
+        st.caption(f"💡 {len(drop_df)} dates within 14 days are ≤30% booked. A 10–20% drop often fills these.")
+    else:
+        st.success("✅ Near-term occupancy is healthy — no urgent drops needed.")
+
+    st.markdown("---")
+
+    steady_count = int((df_all["_bucket"] == "steady").sum())
+    st.subheader(f"✅ STEADY — {steady_count} dates trending normally")
+    with st.expander("Show steady dates"):
+        steady_df = df_all[df_all["_bucket"] == "steady"].drop(columns=["_bucket"])
+        st.dataframe(steady_df.sort_values("Date"), use_container_width=True, hide_index=True)# ============================================================================
 # Page: Settings
 # ============================================================================
 
@@ -560,6 +647,8 @@ def page_settings():
 
 if page == "📊 Portfolio Command Centre":
     page_portfolio()
+elif page == "🎯 Pricing Opportunities":
+    page_pricing()
 elif page == "📈 Direct vs OTA":
     page_direct_vs_ota()
 elif page == "📉 Performance Analytics":
