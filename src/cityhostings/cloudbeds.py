@@ -111,7 +111,7 @@ class CloudbedsClient:
             if check_in_to:
                 params["checkInTo"] = check_in_to
 
-            payload = self._get("getReservations", params)
+            payload = self._get("getReservationsWithRateDetails", params)
             rows = payload.get("data", [])
             for row in rows:
                 yield row
