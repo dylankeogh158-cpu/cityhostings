@@ -37,11 +37,6 @@ def _connection_string() -> str:
         raise RuntimeError(
             "Set DATABASE_URL, or set SUPABASE_URL + SUPABASE_DB_PASSWORD"
         )
-    # Supabase pooled connection (works from GitHub Actions)
-    # Format: postgresql://postgres.PROJECT_REF:PASSWORD@aws-0-REGION.pooler.supabase.com:6543/postgres
-    # The simplest portable form uses the direct connection:
-    # postgresql://postgres:PASSWORD@db.PROJECT_REF.supabase.co:5432/postgres
-    # PROJECT_REF is extracted from the URL.
     project_ref = supa.replace("https://", "").split(".")[0]
     return f"postgresql://postgres:{pw}@db.{project_ref}.supabase.co:5432/postgres"
 
@@ -94,7 +89,7 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
         with c.cursor() as cur:
             for r in reservations:
                 # Look up our internal unit_id from cloudbeds_room_id
-               room_id = str(r.get("roomID") or r.get("assigned", [{}])[0].get("roomID") or "")
+                room_id = str(r.get("roomID") or r.get("assigned", [{}])[0].get("roomID") or "")
                 unit_id = None
                 if room_id:
                     row = cur.execute(
@@ -108,7 +103,7 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
                 check_out = r.get("endDate") or r.get("checkOut")
                 if not check_in or not check_out:
                     log.warning(
-                        "Skipping reservation %s (status=%s) — missing check-in/out date",
+                        "Skipping reservation %s (status=%s) - missing check-in/out date",
                         r.get("reservationID"), r.get("status"),
                     )
                     continue
