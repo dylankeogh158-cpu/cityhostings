@@ -95,6 +95,10 @@ class CloudbedsClient:
 
         Pass `modified_from` as an ISO datetime string for delta syncs.
         Yields one reservation dict at a time so we don't blow up memory.
+
+        For reservations where the list endpoint doesn't include a total
+        (common for OTA "channel collect" bookings like Booking.com/Expedia),
+        we fall back to a per-reservation detail call to fetch the real total.
         """
         page_number = 1
         while True:
@@ -114,6 +118,20 @@ class CloudbedsClient:
             payload = self._get("getReservationsWithRateDetails", params)
             rows = payload.get("data", [])
             for row in rows:
+                has_total = row.get("grandTotal") or row.get("total") or row.get("totalRevenue") or row.get("roomRevenue")
+                if not has_total:
+                    try:
+                        detail = self.get_reservation_detail(row.get("reservationID"))
+                        if detail.get("total") is not None:
+                            row["total"] = detail["total"]
+                        bd = detail.get("balanceDetailed") or {}
+                        if bd.get("grandTotal") is not None:
+                            row.setdefault("grandTotal", bd["grandTotal"])
+                    except CloudbedsError as exc:
+                        log.warning(
+                            "Could not fetch detail for reservation %s: %s",
+                            row.get("reservationID"), exc,
+                        )
                 yield row
 
             if len(rows) < DEFAULT_PAGE_SIZE:
