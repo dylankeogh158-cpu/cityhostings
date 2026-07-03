@@ -94,7 +94,7 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
         with c.cursor() as cur:
             for r in reservations:
                 # Look up our internal unit_id from cloudbeds_room_id
-                room_id = str(r.get("roomID") or r.get("assigned", [{}])[0].get("roomID") or "")
+               room_id = str(r.get("roomID") or r.get("assigned", [{}])[0].get("roomID") or "")
                 unit_id = None
                 if room_id:
                     row = cur.execute(
@@ -103,6 +103,15 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
                     ).fetchone()
                     if row:
                         unit_id = row["id"]
+
+                check_in = r.get("startDate") or r.get("checkIn")
+                check_out = r.get("endDate") or r.get("checkOut")
+                if not check_in or not check_out:
+                    log.warning(
+                        "Skipping reservation %s (status=%s) — missing check-in/out date",
+                        r.get("reservationID"), r.get("status"),
+                    )
+                    continue
 
                 cur.execute(
                     """
@@ -134,8 +143,8 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
                         unit_id,
                         (r.get("sourceName") or r.get("source") or "direct").lower(),
                         (r.get("status") or "").lower(),
-                        r.get("startDate") or r.get("checkIn"),
-                        r.get("endDate") or r.get("checkOut"),
+                        check_in,
+                        check_out,
                         r.get("guestName") or r.get("firstName", "") + " " + r.get("lastName", ""),
                         r.get("grandTotal") or r.get("totalRevenue") or r.get("roomRevenue") or r.get("total") or 0,
                         r.get("grandTotal") or r.get("total") or r.get("balance") or 0,
