@@ -99,7 +99,8 @@ if not auth_gate():
 
 @st.cache_resource
 def get_db():
-   return psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None, autocommit=True)
+    return psycopg.connect(DATABASE_URL, row_factory=dict_row, prepare_threshold=None, autocommit=True)
+
 
 def q(sql: str, params: tuple = ()) -> list[dict]:
     with get_db().cursor() as cur:
@@ -112,6 +113,19 @@ def df(sql: str, params: tuple = ()) -> pd.DataFrame:
     return pd.DataFrame(q(sql, params))
 
 
+def prop_where(prop_id, table_alias: str = "", prefix: str = "and"):
+    """Return (SQL fragment, params tuple) for optional property filter.
+
+    Usage:
+        pf_sql, pf_params = prop_where(prop_filter_id)
+        q(f"select ... from reservations where ... {pf_sql}", (a, b, *pf_params))
+    """
+    if prop_id:
+        col = f"{table_alias}.property_id" if table_alias else "property_id"
+        return f"{prefix} {col} = %s", (prop_id,)
+    return "", ()
+
+
 # ============================================================================
 # Sidebar
 # ============================================================================
@@ -119,6 +133,20 @@ def df(sql: str, params: tuple = ()) -> pd.DataFrame:
 with st.sidebar:
     st.markdown("# 🏢 CityHostings")
     st.caption("Revenue Management")
+    st.markdown("---")
+
+    # ---- Property filter (affects Portfolio Command Centre + Pricing Opportunities) ----
+    props_all = q("select id, name from properties where active = true order by name")
+    prop_names = ["All properties"] + [p['name'] for p in props_all]
+    selected_prop_name = st.selectbox("👀 View property", prop_names)
+
+    if selected_prop_name == "All properties":
+        st.session_state.prop_filter_id = None
+        st.session_state.prop_filter_name = None
+    else:
+        st.session_state.prop_filter_id = next(p['id'] for p in props_all if p['name'] == selected_prop_name)
+        st.session_state.prop_filter_name = selected_prop_name
+
     st.markdown("---")
 
     page = st.radio(
@@ -148,8 +176,14 @@ with st.sidebar:
 # ============================================================================
 
 def page_portfolio():
+    prop_id = st.session_state.get('prop_filter_id')
+    prop_name = st.session_state.get('prop_filter_name')
+
     st.title("📊 Portfolio Command Centre")
-    st.caption(f"Live as of {date.today().strftime('%A, %B %d, %Y')}")
+    if prop_name:
+        st.caption(f"Filtered: **{prop_name}**  ·  Live as of {date.today().strftime('%A, %B %d, %Y')}")
+    else:
+        st.caption(f"All properties  ·  Live as of {date.today().strftime('%A, %B %d, %Y')}")
 
     today = date.today()
     month_start = today.replace(day=1)
@@ -159,38 +193,44 @@ def page_portfolio():
     next_30 = today + timedelta(days=30)
     next_90 = today + timedelta(days=90)
 
+    pf_sql, pf_params = prop_where(prop_id)
+
     # ---- Headline KPIs ----
-    rev_mtd = float(q("""
+    rev_mtd = float(q(f"""
         select coalesce(sum(net_amount), 0) as total
         from reservations
         where check_in >= %s and check_in <= %s
           and status in ('confirmed', 'checked_out')
-    """, (month_start, today))[0]['total'])
+          {pf_sql}
+    """, (month_start, today) + pf_params)[0]['total'])
 
-    bookings_mtd = q("""
+    bookings_mtd = q(f"""
         select count(*) as total
         from reservations
         where check_in >= %s and check_in <= %s
           and status in ('confirmed', 'checked_out')
-    """, (month_start, today))[0]['total']
+          {pf_sql}
+    """, (month_start, today) + pf_params)[0]['total']
 
     pace_forecast = (rev_mtd / days_elapsed) * days_in_month if days_elapsed > 0 else 0
 
-    ota_rev = float(q("""
+    ota_rev = float(q(f"""
         select coalesce(sum(net_amount), 0) as total
         from reservations
         where check_in >= %s and check_in <= %s
           and status in ('confirmed', 'checked_out')
           and lower(coalesce(source,'')) in ('booking.com','expedia','airbnb','airbnb (api)','agoda')
-    """, (month_start, today))[0]['total'])
+          {pf_sql}
+    """, (month_start, today) + pf_params)[0]['total'])
     lost_ota = ota_rev * 0.15
 
-    future_rev_90 = float(q("""
+    future_rev_90 = float(q(f"""
         select coalesce(sum(net_amount), 0) as total
         from reservations
         where check_in > %s and check_in <= %s
           and status in ('confirmed', 'checked_out')
-    """, (today, next_90))[0]['total'])
+          {pf_sql}
+    """, (today, next_90) + pf_params)[0]['total'])
 
     c1, c2, c3, c4, c5 = st.columns(5)
     c1.metric("Revenue MTD", f"€{rev_mtd:,.0f}")
@@ -208,7 +248,10 @@ def page_portfolio():
     st.subheader("⚠️ Alerts — needs your attention")
 
     alerts = []
-    properties = q("select id, name, total_units from properties where active = true")
+    if prop_id:
+        properties = q("select id, name, total_units from properties where id = %s and active = true", (prop_id,))
+    else:
+        properties = q("select id, name, total_units from properties where active = true")
 
     for prop in properties:
         sold = q("""
@@ -254,7 +297,7 @@ def page_portfolio():
     st.markdown("---")
 
     # ---- Per-property cards ----
-    st.subheader("Properties")
+    st.subheader("Property details" if prop_id else "Properties")
 
     for prop in properties:
         with st.container(border=True):
@@ -282,12 +325,150 @@ def page_portfolio():
 
 
 # ============================================================================
+# Page: Pricing Opportunities
+# ============================================================================
+
+def page_pricing():
+    prop_id = st.session_state.get('prop_filter_id')
+    prop_name = st.session_state.get('prop_filter_name')
+
+    st.title("🎯 Pricing Opportunities")
+    if prop_name:
+        st.caption(f"Filtered: **{prop_name}**  ·  Forward-looking dates needing rate adjustments")
+    else:
+        st.caption("All properties  ·  Forward-looking dates needing rate adjustments")
+
+    today = date.today()
+    horizon_days = st.slider("Look ahead (days)", 14, 90, 60)
+    horizon = today + timedelta(days=horizon_days)
+
+    if prop_id:
+        properties = q("select id, name, total_units from properties where id = %s and active = true", (prop_id,))
+    else:
+        properties = q("select id, name, total_units from properties where active = true order by name")
+
+    rows = []
+    for prop in properties:
+        units = prop['total_units'] or 1
+
+        # Baseline rate per day-of-week for this property (last 90 days)
+        rates_by_dow = q("""
+            select extract(dow from check_in) as dow,
+                   avg(net_amount / nullif(nights, 0))::numeric as avg_rate
+            from reservations
+            where property_id = %s
+              and status in ('confirmed', 'checked_out')
+              and check_in >= current_date - interval '90 days'
+              and net_amount > 0 and nights > 0
+            group by extract(dow from check_in)
+        """, (prop['id'],))
+        rate_by_dow = {int(r['dow']): float(r['avg_rate'] or 0) for r in rates_by_dow}
+
+        overall = q("""
+            select avg(net_amount / nullif(nights, 0))::numeric as avg_rate
+            from reservations
+            where property_id = %s
+              and status in ('confirmed', 'checked_out')
+              and check_in >= current_date - interval '90 days'
+              and net_amount > 0 and nights > 0
+        """, (prop['id'],))
+        overall_rate = float(overall[0]['avg_rate'] or 0) if overall else 0
+
+        daily = q("""
+            select gs::date as night,
+                   count(*) as room_nights
+            from generate_series(%s::date, %s::date, '1 day') gs
+            left join reservations r
+              on r.property_id = %s
+              and r.status in ('confirmed', 'checked_out')
+              and r.check_in <= gs::date
+              and r.check_out > gs::date
+            group by gs::date
+            order by gs::date
+        """, (today, horizon, prop['id']))
+
+        for d in daily:
+            night = d['night']
+            days_out = (night - today).days
+            booked = d['room_nights'] or 0
+            occ = (booked / units * 100) if units else 0
+
+            pg_dow = (night.weekday() + 1) % 7
+            baseline = rate_by_dow.get(pg_dow) or overall_rate
+
+            if occ >= 70:
+                bucket = "raise"
+                if occ >= 95: pct, sug = 0.20, "↑ +15–25% (very full)"
+                elif occ >= 85: pct, sug = 0.12, "↑ +10–15% (filling fast)"
+                else: pct, sug = 0.07, "↑ +5–10%"
+            elif days_out <= 14 and occ <= 30:
+                bucket = "drop"
+                if occ == 0 and days_out <= 7: pct, sug = -0.17, "↓ −15–20% (empty close-in)"
+                elif occ <= 15: pct, sug = -0.12, "↓ −10–15%"
+                else: pct, sug = -0.07, "↓ −5–10%"
+            else:
+                bucket = "steady"
+                pct, sug = 0, "Hold"
+
+            if baseline > 0 and pct != 0:
+                target = baseline * (1 + pct)
+                rate_text = f"€{baseline:.0f} → €{target:.0f}"
+            elif baseline > 0:
+                rate_text = f"€{baseline:.0f}"
+            else:
+                rate_text = "—"
+
+            rows.append({
+                "Date": night,
+                "Day": night.strftime("%a"),
+                "Property": prop['name'],
+                "Booked": f"{booked}/{units}",
+                "Occ %": f"{occ:.0f}%",
+                "Days out": days_out,
+                "Current → Target": rate_text,
+                "Suggestion": sug,
+                "_bucket": bucket,
+            })
+
+    df_all = pd.DataFrame(rows)
+    if df_all.empty:
+        st.info("No data available.")
+        return
+
+    st.subheader("🔥 RAISE RATES — high demand")
+    raise_df = df_all[df_all["_bucket"] == "raise"].drop(columns=["_bucket"])
+    if not raise_df.empty:
+        st.dataframe(raise_df.sort_values("Date"), use_container_width=True, hide_index=True)
+        st.caption(f"💡 {len(raise_df)} dates with ≥70% occupancy. Baseline rate = avg paid for that day-of-week over last 90 days.")
+    else:
+        st.success("✅ No 'raise' opportunities — nothing above 70% booked in this window.")
+
+    st.markdown("---")
+
+    st.subheader("⚠️ DROP RATES — close-in soft demand")
+    drop_df = df_all[df_all["_bucket"] == "drop"].drop(columns=["_bucket"])
+    if not drop_df.empty:
+        st.dataframe(drop_df.sort_values("Date"), use_container_width=True, hide_index=True)
+        st.caption(f"💡 {len(drop_df)} dates within 14 days are ≤30% booked. A 10–20% drop often fills these.")
+    else:
+        st.success("✅ Near-term occupancy is healthy — no urgent drops needed.")
+
+    st.markdown("---")
+
+    steady_count = int((df_all["_bucket"] == "steady").sum())
+    st.subheader(f"✅ STEADY — {steady_count} dates trending normally")
+    with st.expander("Show steady dates"):
+        steady_df = df_all[df_all["_bucket"] == "steady"].drop(columns=["_bucket"])
+        st.dataframe(steady_df.sort_values("Date"), use_container_width=True, hide_index=True)
+
+
+# ============================================================================
 # Page: Direct vs OTA Analysis
 # ============================================================================
 
 def page_direct_vs_ota():
     st.title("📈 Direct vs OTA Analysis")
-    st.caption("Channel mix, lost margin, and direct-booking opportunities")
+    st.caption("Channel mix, lost margin, and direct-booking opportunities  ·  (portfolio-wide)")
 
     days_back = st.slider("Look back (days)", 30, 365, 90)
     cutoff = date.today() - timedelta(days=days_back)
@@ -389,7 +570,7 @@ def page_direct_vs_ota():
 
 def page_performance():
     st.title("📉 Performance Analytics")
-    st.caption("Trends, day-of-week patterns, lead time, source quality")
+    st.caption("Trends, day-of-week patterns, lead time, source quality  ·  (portfolio-wide)")
 
     st.subheader("13-month revenue trend (per property)")
     trend = df("""
@@ -522,131 +703,7 @@ def page_performance():
         )
 
 
-def page_pricing():
-    st.title("🎯 Pricing Opportunities")
-    st.caption("Forward-looking dates needing rate adjustments — based on booking pace")
-
-    today = date.today()
-    horizon_days = st.slider("Look ahead (days)", 14, 90, 60)
-    horizon = today + timedelta(days=horizon_days)
-
-    properties = q("select id, name, total_units from properties where active = true order by name")
-
-    rows = []
-    for prop in properties:
-        units = prop['total_units'] or 1
-
-        # Baseline rate per day-of-week for this property (last 90 days)
-        rates_by_dow = q("""
-            select extract(dow from check_in) as dow,
-                   avg(net_amount / nullif(nights, 0))::numeric as avg_rate
-            from reservations
-            where property_id = %s
-              and status in ('confirmed', 'checked_out')
-              and check_in >= current_date - interval '90 days'
-              and net_amount > 0 and nights > 0
-            group by extract(dow from check_in)
-        """, (prop['id'],))
-        rate_by_dow = {int(r['dow']): float(r['avg_rate'] or 0) for r in rates_by_dow}
-
-        # Fallback overall avg
-        overall = q("""
-            select avg(net_amount / nullif(nights, 0))::numeric as avg_rate
-            from reservations
-            where property_id = %s
-              and status in ('confirmed', 'checked_out')
-              and check_in >= current_date - interval '90 days'
-              and net_amount > 0 and nights > 0
-        """, (prop['id'],))
-        overall_rate = float(overall[0]['avg_rate'] or 0) if overall else 0
-
-        daily = q("""
-            select gs::date as night,
-                   count(*) as room_nights
-            from generate_series(%s::date, %s::date, '1 day') gs
-            left join reservations r
-              on r.property_id = %s
-              and r.status in ('confirmed', 'checked_out')
-              and r.check_in <= gs::date
-              and r.check_out > gs::date
-            group by gs::date
-            order by gs::date
-        """, (today, horizon, prop['id']))
-
-        for d in daily:
-            night = d['night']
-            days_out = (night - today).days
-            booked = d['room_nights'] or 0
-            occ = (booked / units * 100) if units else 0
-
-            # Python weekday: Mon=0..Sun=6 → Postgres dow: Sun=0..Sat=6
-            pg_dow = (night.weekday() + 1) % 7
-            baseline = rate_by_dow.get(pg_dow) or overall_rate
-
-            if occ >= 70:
-                bucket = "raise"
-                if occ >= 95: pct, sug = 0.20, "↑ +15–25% (very full)"
-                elif occ >= 85: pct, sug = 0.12, "↑ +10–15% (filling fast)"
-                else: pct, sug = 0.07, "↑ +5–10%"
-            elif days_out <= 14 and occ <= 30:
-                bucket = "drop"
-                if occ == 0 and days_out <= 7: pct, sug = -0.17, "↓ −15–20% (empty close-in)"
-                elif occ <= 15: pct, sug = -0.12, "↓ −10–15%"
-                else: pct, sug = -0.07, "↓ −5–10%"
-            else:
-                bucket = "steady"
-                pct, sug = 0, "Hold"
-
-            if baseline > 0 and pct != 0:
-                target = baseline * (1 + pct)
-                rate_text = f"€{baseline:.0f} → €{target:.0f}"
-            elif baseline > 0:
-                rate_text = f"€{baseline:.0f}"
-            else:
-                rate_text = "—"
-
-            rows.append({
-                "Date": night,
-                "Day": night.strftime("%a"),
-                "Property": prop['name'],
-                "Booked": f"{booked}/{units}",
-                "Occ %": f"{occ:.0f}%",
-                "Days out": days_out,
-                "Current → Target": rate_text,
-                "Suggestion": sug,
-                "_bucket": bucket,
-            })
-
-    df_all = pd.DataFrame(rows)
-    if df_all.empty:
-        st.info("No data available.")
-        return
-
-    st.subheader("🔥 RAISE RATES — high demand")
-    raise_df = df_all[df_all["_bucket"] == "raise"].drop(columns=["_bucket"])
-    if not raise_df.empty:
-        st.dataframe(raise_df.sort_values("Date"), use_container_width=True, hide_index=True)
-        st.caption(f"💡 {len(raise_df)} dates with ≥70% occupancy. Baseline rate = avg paid for that day-of-week over last 90 days.")
-    else:
-        st.success("✅ No 'raise' opportunities — nothing above 70% booked in this window.")
-
-    st.markdown("---")
-
-    st.subheader("⚠️ DROP RATES — close-in soft demand")
-    drop_df = df_all[df_all["_bucket"] == "drop"].drop(columns=["_bucket"])
-    if not drop_df.empty:
-        st.dataframe(drop_df.sort_values("Date"), use_container_width=True, hide_index=True)
-        st.caption(f"💡 {len(drop_df)} dates within 14 days are ≤30% booked. A 10–20% drop often fills these.")
-    else:
-        st.success("✅ Near-term occupancy is healthy — no urgent drops needed.")
-
-    st.markdown("---")
-
-    steady_count = int((df_all["_bucket"] == "steady").sum())
-    st.subheader(f"✅ STEADY — {steady_count} dates trending normally")
-    with st.expander("Show steady dates"):
-        steady_df = df_all[df_all["_bucket"] == "steady"].drop(columns=["_bucket"])
-        st.dataframe(steady_df.sort_values("Date"), use_container_width=True, hide_index=True)
+# ============================================================================
 # Page: Settings
 # ============================================================================
 
