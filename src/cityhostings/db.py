@@ -99,8 +99,8 @@ def upsert_reservations(property_id: str, reservations: Iterable[dict]) -> int:
                     if row:
                         unit_id = row["id"]
 
-                check_in = r.get("startDate") or r.get("checkIn")
-                check_out = r.get("endDate") or r.get("checkOut")
+                check_in = r.get("startDate") or r.get("checkIn") or r.get("checkin") or r.get("arrivalDate") or r.get("start_date")
+                check_out = r.get("endDate") or r.get("checkOut") or r.get("checkout") or r.get("departureDate") or r.get("end_date")
                 if not check_in or not check_out:
                     log.warning(
                         "Skipping reservation %s (status=%s) - missing check-in/out date",
