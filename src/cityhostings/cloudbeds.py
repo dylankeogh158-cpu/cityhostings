@@ -121,7 +121,7 @@ class CloudbedsClient:
                 has_total = row.get("grandTotal") or row.get("total") or row.get("totalRevenue") or row.get("roomRevenue")
                 if not has_total:
                     try:
-                        detail = self.get_reservation_detail(row.get("reservationID"))
+                        detail = self.get_reservation_detail(row.get("reservationID"), property_id)
                         if detail.get("total") is not None:
                             row["total"] = detail["total"]
                         bd = detail.get("balanceDetailed") or {}
@@ -138,6 +138,8 @@ class CloudbedsClient:
                 return
             page_number += 1
 
-    def get_reservation_detail(self, reservation_id: str) -> dict:
-        """Single reservation with full line-item detail."""
-        return self._get("getReservation", {"reservationID": reservation_id}).get("data", {})
+def get_reservation_detail(self, reservation_id: str, property_id: str = None) -> dict:
+    params = {"reservationID": reservation_id}
+    if property_id:
+        params["propertyID"] = property_id
+    return self._get("getReservation", params).get("data", {})
