@@ -138,8 +138,8 @@ class CloudbedsClient:
                 return
             page_number += 1
 
-def get_reservation_detail(self, reservation_id: str, property_id: str = None) -> dict:
-    params = {"reservationID": reservation_id}
-    if property_id:
-        params["propertyID"] = property_id
-    return self._get("getReservation", params).get("data", {})
+    def get_reservation_detail(self, reservation_id: str, property_id: str = None) -> dict:
+        params = {"reservationID": reservation_id}
+        if property_id:
+            params["propertyID"] = property_id
+        return self._get("getReservation", params).get("data", {})
